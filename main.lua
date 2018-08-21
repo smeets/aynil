@@ -12,12 +12,11 @@ local players = { player(1), player(2), player(3), player(4) }
 
 local hound = {
   state = physics.State(),
-  deriv = physics.Derivative()
+  boost = 0
 }
 
 local target = {
   state = physics.State(),
-  deriv = physics.Derivative(),
   owner = 0
 }
 
@@ -34,7 +33,9 @@ function init()
   targetIsFree  = true
 
   hound.state.position = vec(0, 0)
-  hound.state.velocity = vec(0,0)
+  hound.state.velocity = vec(0, 0)
+  hound.state.momentum = vec(0, 0)
+  hound.boost = 0
 
   for i = 1, 4 do
     players[i].state.position = vec(20, H/2)
@@ -43,6 +44,11 @@ function init()
 
   target.state.position = vec(W/2, H/2)
   target.state.velocity = players[1].state.position - target.state.position
+
+  local joysticks = love.joystick.getJoysticks()
+  for i, joystick in ipairs(joysticks) do
+      players[joystick:getID()].active = true
+  end
 end
 
 function updatePlayer(player, t, dt)
@@ -52,23 +58,29 @@ function updatePlayer(player, t, dt)
   local ax, ay = player.input:get 'aim'
 
   local dx = player.state.position - target.state.position
-  if dx.length < 30 then 
+  if dx.length < 30 and target.owner == 0 then 
     target.owner = player.id
   end
 
-  player.state.velocity.y = player.state.velocity.y + my * 1000 * dt;
-  player.state.velocity.x = player.state.velocity.x + mx * 1000 * dt;
+  player.state.velocity.y = player.state.velocity.y + my * 4000 * dt;
+  player.state.velocity.x = player.state.velocity.x + mx * 4000 * dt;
+  if player.state.velocity.length > 500 then
+    local f = 500 / player.state.velocity.length
+    player.state.velocity = player.state.velocity * f
+  end
 
   if player.input:pressed 'action' and target.owner == player.id then
-    target.state.velocity = vec(ax, ay) * 10
+    local dir = vec(mx, my)
+    target.state.position = player.state.position + dir * 35;
+    target.state.velocity = dir * 1000
     target.owner = 0
   end
 
-  if love.keyboard.isDown("r") then
+  if player.input:pressed 'reload' then
     init()
   end
 
-  player.state.velocity = player.state.velocity * 0.98
+  player.state.velocity = player.state.velocity * 0.90
   player.state.position = player.state.position + player.state.velocity * dt
 end
 
@@ -77,39 +89,62 @@ function updateHound(t, dt)
     return (target.state.position - s.position).normalized * 800
   end
 
-  state, deriv = physics.evaluate(hound.state, t, dt, hound.deriv, accel)
-  hound.state = state
-  hound.deriv = deriv
+  physics.evaluate(hound.state, t, dt, accel, 0.96)
+
+  if hound.state.velocity.length < 150 and target.owner > 0 then
+    hound.boost = math.min(0.5, hound.boost + 0.05 * dt)
+  elseif target.owner == 0 then 
+    hound.boost = hound.boost * 0.92
+    hound.state.velocity = hound.state.velocity * (1 + hound.boost)
+  end
 end
 
 function updateTarget(t, dt)
   local accel = function (s, t)
     if target.owner > 0 then
       local player = players[target.owner]
-      return (player.state.position - target.state.position) * 10
+      return (player.state.position - target.state.position) * 10 * dt
     else
       return vec(0, 0)
     end
   end
 
   if target.owner == 0 then
-    state, deriv = physics.evaluate(target.state, t, dt, target.deriv, accel)
-    target.state = state
-    target.deriv = deriv
+    physics.evaluate(target.state, t, dt, accel, 0.98)
   else
     local player = players[target.owner]
-    target.state.position = player.state.position + player.state.velocity * 10 * dt
+    local ax, ay = player.input:get 'move'
+    target.state.position = player.state.position + vec(ax, ay) * 35;
   end
 end
 
-function bounceBounds(state)
+function bounceBounds(state, w, h)
   local x, y = state.position:split()
-  if x < 0 or x+w>W then
+  if x < 0 then
     state.velocity.x = -state.velocity.x
+    state.position.x = 1
   end
-  if y < 0 or y+h>H then
+  if x+w > W then
+    state.velocity.x = -state.velocity.x
+    state.position.x = W-w-1
+  end
+  
+  if y < 0 then
     state.velocity.y = -state.velocity.y
+    state.position.y = 0
   end
+  if y+h > H then
+    state.velocity.y = -state.velocity.y
+    state.position.y = H-h
+  end
+end
+
+function love.joystickadded(joystick)
+  players[joystick:getID()].active = true
+end
+
+function love.joystickremoved(joystick)
+  players[joystick:getID()].active = false
 end
 
 -- Increase the size of the rectangle every frame.
@@ -118,30 +153,33 @@ function love.update(gdt)
   t = t + gdt
 
   updateHound(t, gdt)
-  for i=1,4 do
-    updatePlayer(players[i], t, gdt)
-    bounceBounds(players[i].state)
+  for i, player in ipairs(players) do
+    if player.active then
+      updatePlayer(player, t, gdt)
+      bounceBounds(player.state, w, h)
+    end
   end
   updateTarget(t, gdt)
 
-  bounceBounds(hound.state)
-  bounceBounds(target.state)
-  
+  bounceBounds(hound.state, w, h)
+  bounceBounds(target.state, w-5, h-5)
+
   lurker.update()
 end
 
--- Draw a coloured rectangle.
 function love.draw()
   local x, y = hound.state.position:split()
   love.graphics.setColor(0.4, 0, 0)
   love.graphics.rectangle("fill", x, y, w, h)
 
-  for i=1,4 do
-    local player = players[i]
-    x, y = player.state.position:split()
-    love.graphics.setColor(0, 0.4, 0.4)
-    love.graphics.rectangle("fill", x, y, w, h)
+  for i, player in ipairs(players) do
+    if player.active then
+      x, y = player.state.position:split()
+      love.graphics.setColor(0, 0.4, 0.4)
+      love.graphics.rectangle("fill", x, y, w, h)
+    end
   end
+  
   x, y = target.state.position:split()
   love.graphics.setColor(0, 0.0, 0.4)
   love.graphics.rectangle("fill", x, y, w-5, h-5)

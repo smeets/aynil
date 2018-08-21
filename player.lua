@@ -7,7 +7,6 @@ function Player(idx)
 	  id = idx,
 	  active = false,
 	  state = physics.State(),
-	  deriv = physics.Derivative(),
 	  input = baton.new {
 		  controls = {
 		    left = {'key:left', 'key:a', 'axis:leftx-', 'button:dpleft'},
@@ -18,7 +17,8 @@ function Player(idx)
 		    aright = {'key:right', 'key:d', 'axis:rightx+', 'button:dpright'},
 		    aup = {'key:up', 'key:w', 'axis:righty-', 'button:dpup'},
 		    adown = {'key:down', 'key:s', 'axis:righty+', 'button:dpdown'},
-		    action = {'key:x', 'button:a'},
+		    action = {'key:space', 'axis:triggerright+'},
+		    reload = {'key:r', 'button:y'},
 		  },
 		  pairs = {
 		    move = {'left', 'right', 'up', 'down'},

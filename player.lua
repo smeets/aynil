@@ -7,6 +7,7 @@ function Player(idx)
 	  id = idx,
 	  active = false,
 	  state = physics.State(),
+    color = vec(1,1),
 	  input = baton.new {
 		  controls = {
 		    left = {'key:left', 'key:a', 'axis:leftx-', 'button:dpleft'},
